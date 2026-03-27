@@ -1,0 +1,19 @@
+# Environments
+.venv/
+.venv-gpu/
+.venv-sys/
+
+# Data (too large for git — download via prepare_data.py)
+data/
+
+# Model weights (upload to HuggingFace instead)
+models/*.pt
+
+# Logs
+*.log
+wandb/
+
+# Generated
+dashboard.html
+__pycache__/
+*.pyc
