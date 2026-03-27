@@ -60,7 +60,7 @@ python scripts/compile_pdf.py          # Compile full paper PDF
 ## Model Weights (HuggingFace)
 
 Pre-trained checkpoints are available on HuggingFace:
-> 🤗 [zorko/pentanet-124m](https://huggingface.co/zorko/pentanet-124m) *(coming soon)*
+> 🤗 [kyworn/pentanet-124m](https://huggingface.co/kyworn/pentanet-124m) 
 
 ## Citation
 
