@@ -1,3 +1,32 @@
+---
+language: en
+license: mit
+tags:
+  - quantization
+  - pentanary
+  - bitnet
+  - language-model
+  - native-quantization
+  - extreme-quantization
+datasets:
+  - wikitext
+metrics:
+  - perplexity
+model-index:
+  - name: PentaNet-124M
+    results:
+      - task:
+          type: text-generation
+          name: Language Modeling
+        dataset:
+          type: wikitext
+          name: WikiText-103
+        metrics:
+          - type: perplexity
+            value: 180.32
+            name: Validation Perplexity (mean, 3 seeds)
+---
+
 # PentaNet — Native Pentanary Quantization for LLMs
 
 **Author:** Zorko · Independent Researcher · [zorko.xyz](https://zorko.xyz)
