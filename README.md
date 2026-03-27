@@ -45,6 +45,17 @@ model-index:
 - Trained on a single **RTX 5080** (16 GB)
 - No collapse: ±2 buckets maintain ~11% occupancy through all 10k iterations
 
+### Text Generation Example (124M params, 20min training)
+*(Prompt: "The history of the internet began with")*
+
+```text
+⏳ Generating with BitNet (Ternary {-1, 0, 1}) ...
+🤖 BITNET S42: The history of the internet began with the <unk> to be a way , <unk> , which was the first recent of the <unk> , and the city and the <unk> . The French army was the first to be the first @-@ scale
+
+⏳ Generating with PentaNet (Pentanary {-2, -1, 0, 1, 2}) ...
+🤖 PENTANET S42: The history of the internet began with the original level of the other . The term of the original world was to the public court of the United States in July 2013 in February 15 , 2015 , as well as the team of $ 2 @,@ 000 . In the same year , the
+```
+*Notice how BitNet struggles with vocabulary collapse (`<unk>`) and repetitive stuttering, while PentaNet generates fluent, grammatically correct Wikipedia-style coherent sentences (despite being factually hallucinatory due to the small size).*
 ## Project Structure
 
 ```
