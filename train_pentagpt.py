@@ -170,6 +170,10 @@ class GPTConfig:
             self.n_layer = 12
             self.n_head = 12
             self.n_embd = 768
+        elif size == "xlarge":  # GPT-2 medium scale, ~345M params
+            self.n_layer = 24
+            self.n_head = 16
+            self.n_embd = 1024
 
 
 class DataLoader:
@@ -212,7 +216,7 @@ def count_weight_distribution(model):
 
 def train():
     parser = argparse.ArgumentParser(description="PentaGPT Training — Duel PentaNet vs BitNet")
-    parser.add_argument('--size', type=str, default='large', choices=['small', 'medium', 'large'])
+    parser.add_argument('--size', type=str, default='large', choices=['small', 'medium', 'large', 'xlarge'])
     parser.add_argument('--mode', type=str, default='pentanet', choices=['pentanet', 'bitnet'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=16)

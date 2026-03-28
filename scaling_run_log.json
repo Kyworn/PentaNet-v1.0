@@ -1,0 +1,11 @@
+{
+  "total_hours": 0.06266617576281229,
+  "runs": [
+    {
+      "size": "xlarge",
+      "mode": "pentanet",
+      "seed": 42,
+      "status": "failed"
+    }
+  ]
+}

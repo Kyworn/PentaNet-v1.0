@@ -89,13 +89,15 @@ All hyperparameters are strictly identical between PentaNet and BitNet runs to e
 | Optimizer | AdamW ($\beta_1 = 0.9$, $\beta_2 = 0.999$) |
 | Weight Decay | 0.1 |
 | Learning Rate | $3 \times 10^{-4}$ (peak) |
-| LR Schedule | Cosine decay to $3 \times 10^{-5}$ |
+| LR Schedule | Cosine decay to $3 \times 10^{-5}$ (min lr = peak / 10) |
 | Warmup | 500 iterations (linear) |
+| Gradient Clipping | 1.0 (global norm) |
 | Batch Size | 8 |
+| Context Length | 512 tokens |
 | Max Iterations | 10,000 |
 | Precision | BFloat16 (AMP) |
 
-All experiments were conducted with three independent random seeds (42, 1337, 2026) to estimate inter-run variance. Training was performed on a single NVIDIA RTX 5080 (16 GB VRAM).
+All experiments were conducted with three independent random seeds (42, 1337, 2026) to estimate inter-run variance. The same three seeds are used across all model sizes to ensure comparability of variance estimates. Training was performed on a single NVIDIA RTX 5080 (16 GB VRAM).
 
 ### 3.5 Dataset
 
@@ -215,14 +217,16 @@ The AVX2 zero-multiplier kernel matches FP32 dequantized performance at batch si
 
 ### 5.3 Limitations
 
-1. **Scale.** Our experiments use a 124M-parameter model. While the results are promising, validation at 1B+ parameters on larger corpora (e.g., FineWeb-Edu, RedPajama) is necessary to confirm that the perplexity advantage scales.
+1. **Scaling behavior.** Preliminary experiments at 345M parameters (24 layers, 16 heads, 1024 embedding dim) reveal a reversal of the perplexity advantage. Runs were conducted on NVIDIA A100 80GB GPUs (Modal cloud) using WikiText-103 with batch size 8, context length 512, warmup 5,000 iterations, and the same cosine LR schedule (peak lr=3e-4, min lr=3e-5). At 8,000 iterations (~32.8M tokens), BitNet achieves PPL 160.8 versus PentaNet PPL 319.4 under identical conditions; at 9,000 iterations (~36.9M tokens) the gap widens to BitNet PPL 138.6 vs PentaNet PPL 271.2. A learning rate ablation (lr=1e-4, 5,000 iterations, seeds 42 and 1337) confirmed that lower learning rates do not recover performance — PentaNet seed=42 reaches only PPL 741 at iter 3,000 vs PPL 576 with lr=3e-4 — ruling out LR schedule as the primary cause. We hypothesize that STE gradient error accumulates over the additional 12 layers relative to the 124M setting: each $\pm 1 \leftrightarrow \pm 2$ quantization boundary introduces a gradient discontinuity, and with 24 layers the propagated signal degrades more severely. We report this result transparently: the 124M advantage does not transfer directly to 345M under the current STE formulation.
 2. **Kernel throughput.** The current Triton kernel implements zero-multiplier arithmetic at the source level but does not yet match cuBLAS throughput on GPU — modern BLAS libraries use tensor cores which make FADD and FMUL effectively equivalent in cost. A DeepShift-style kernel (Elhoushi et al., 2019) leveraging INT8 tensor cores, or a Split-K decomposition for large-$K$ shapes, would close this gap. The primary inference benefit on current GPU hardware is the 5.3× reduction in weight memory bandwidth.
 3. **Single dataset.** While WikiText-103 is a standard benchmark, downstream task evaluation (MMLU, HellaSwag, ARC) is needed to confirm that lower perplexity translates into improved task performance.
 4. **Comparison scope.** We compare against BitNet (ternary) only. A broader comparison including 2-bit PTQ methods (AQLM, QuIP#) and 4-bit QAT baselines would strengthen the positioning.
 
 ### 5.4 Future Work
 
-- **Scaling experiments** at 1B and 7B parameters to evaluate whether the ~6% PPL gap widens or narrows with model size.
+- **Gradient-aware STE with per-layer adaptive clipping.** Deeper networks require a fundamentally different STE formulation — one that accounts for the accumulation of gradient error across quantization boundaries. Per-layer adaptive clipping, where the STE threshold is modulated by depth and gradient norm, is a concrete and non-trivial direction to recover the scaling advantage.
+- **Per-layer scale factors.** Replacing the global absmean scale with per-neuron or per-head scales would give the optimizer finer control over which weights occupy the $\pm 2$ states, potentially stabilizing convergence at larger model sizes.
+- **Distillation from FP32 teacher.** Initializing PentaNet from a pre-trained FP32 model and fine-tuning with pentanary STE may sidestep the optimization difficulty at scale — the ±2 states would be seeded from meaningful weight magnitudes rather than learned from random initialization.
 - **Kernel optimization** via a DeepShift-style INT8 tensor-core GEMM or Split-K decomposition to achieve competitive GPU throughput vs. cuBLAS.
 - **Septenary extension** ($\{-3, \ldots, +3\}$, $\lceil \log_2 7 \rceil = 3$ bits, 7/8 states used) to test whether further state expansion yields diminishing returns at identical storage cost.
 - **Downstream evaluation** on standard NLP benchmarks (MMLU, HellaSwag, ARC-Easy/Challenge).
@@ -236,7 +240,13 @@ We introduce PentaNet, a native pentanary quantization scheme for Large Language
 2. **Stable STE training** with no gradient oscillation or divergence at the $\pm 1 \leftrightarrow \pm 2$ boundary.
 3. **Persistent utilization of all five weight states**, with $\pm 2$ buckets maintaining $\sim$11% occupancy throughout training — disproving the collapse hypothesis.
 
-These results establish that the next level of extreme quantization beyond ternary is not only feasible but beneficial. PentaNet achieves higher representational fidelity at zero additional multiplier cost, setting a new efficiency frontier for sub-3-bit native training.
+These results establish that native pentanary quantization is feasible and beneficial in the capacity-starved regime. Preliminary scaling experiments at 345M parameters reveal that this advantage does not transfer directly under the current STE formulation, with gradient error accumulation across deeper networks identified as the likely mechanism. We report this finding transparently: PentaNet's 124M result is robust, but unlocking its potential at scale requires advances in gradient-aware training for multi-level discrete weight spaces — a concrete and open direction for future work.
+
+---
+
+## Acknowledgments
+
+We thank Reddit user arki05 for pointing us to DeepShift (Elhoushi et al., 2019) and APoT (Li et al., 2019) during early discussions of this work.
 
 ---
 
