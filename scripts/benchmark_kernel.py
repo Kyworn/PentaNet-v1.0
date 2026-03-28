@@ -1,11 +1,13 @@
 """
-scripts/benchmark_kernel.py — PentaKernel vs PyTorch Baseline
-=============================================================
+scripts/benchmark_kernel.py — PentaKernel vs PyTorch Baselines
+==============================================================
 
 Validates:
   1. Exact pack/unpack roundtrip
   2. Numerical parity (kernel ≈ PyTorch STE reference)
-  3. Throughput (ms/call) and speedup
+  3. Throughput (ms/call) and speedup vs two baselines:
+       - Dequant BF16 : unpack weights → BF16 → F.linear  (honest inference baseline)
+       - STE FP32     : full-precision STE forward          (training reference, kept for info)
   4. VRAM footprint comparison
 """
 
@@ -83,8 +85,8 @@ def benchmark_throughput():
     print("\n" + "═" * 60)
     print("  TEST 3 — Throughput Benchmark")
     print("═" * 60)
-    print(f"  {'Shape':<30} {'PyTorch':>10} {'Kernel':>10} {'Speedup':>9}")
-    print(f"  {'-'*62}")
+    print(f"  {'Shape':<30} {'Dequant BF16':>13} {'Kernel':>10} {'Speedup':>9}  (STE FP32 ref)")
+    print(f"  {'-'*75}")
 
     cases = [
         ("B=1,  K=768,  N=768  ", 1,   768,  768),
@@ -96,36 +98,57 @@ def benchmark_throughput():
 
     results = []
     for label, M, K, N in cases:
-        layer    = PentaLinear(K, N, bias=False).to(DEVICE)
-        x_fp32   = torch.randn(M, K, device=DEVICE)
-        x_bf16   = x_fp32.to(torch.bfloat16)
+        layer  = PentaLinear(K, N, bias=False).to(DEVICE)
+        x_fp32 = torch.randn(M, K, device=DEVICE)
+        x_bf16 = x_fp32.to(torch.bfloat16)
         packed, K_orig, scale = quantize_and_pack(layer.weight.detach())
 
-        # Warmup
+        # Honest inference baseline: dequantize weights → BF16 → F.linear
+        # This is what a naive "store quantized, dequantize at runtime" approach does.
+        w_dequant = unpack_weights(packed, K_orig).to(torch.bfloat16) * scale
+
+        # Warmup all three
         for _ in range(WARMUP):
+            _ = F.linear(x_bf16, w_dequant)
+            _ = penta_linear(x_bf16, packed, scale, K_orig)
             with torch.no_grad():
                 _ = layer(x_fp32)
-            _ = penta_linear(x_bf16, packed, scale, K_orig)
         torch.cuda.synchronize()
 
-        # PyTorch STE
+        # Baseline: dequant BF16 (honest)
         t0 = time.perf_counter()
         for _ in range(ITERS):
-            with torch.no_grad():
-                _ = layer(x_fp32)
+            _ = F.linear(x_bf16, w_dequant)
         torch.cuda.synchronize()
-        t_pt = (time.perf_counter() - t0) / ITERS * 1000   # ms
+        t_dq = (time.perf_counter() - t0) / ITERS * 1000   # ms
 
-        # Kernel
+        # Kernel: 3-bit packed Triton
         t0 = time.perf_counter()
         for _ in range(ITERS):
             _ = penta_linear(x_bf16, packed, scale, K_orig)
         torch.cuda.synchronize()
         t_ker = (time.perf_counter() - t0) / ITERS * 1000  # ms
 
-        speedup = t_pt / t_ker
-        print(f"  {label:<30} {t_pt:>8.3f}ms {t_ker:>8.3f}ms {speedup:>8.2f}×")
-        results.append({"label": label, "pytorch_ms": t_pt, "kernel_ms": t_ker, "speedup": speedup})
+        # Reference: STE FP32 (kept for information, not primary metric)
+        t0 = time.perf_counter()
+        for _ in range(ITERS):
+            with torch.no_grad():
+                _ = layer(x_fp32)
+        torch.cuda.synchronize()
+        t_ste = (time.perf_counter() - t0) / ITERS * 1000  # ms
+
+        speedup = t_dq / t_ker
+        print(f"  {label:<30} {t_dq:>11.3f}ms {t_ker:>8.3f}ms {speedup:>8.2f}×  ({t_ste:.3f}ms STE)")
+        results.append({
+            "label"       : label,
+            "dequant_ms"  : t_dq,
+            "kernel_ms"   : t_ker,
+            "ste_ms"      : t_ste,
+            "speedup_vs_dequant": speedup,
+            # kept for backwards compat with old JSON field name
+            "pytorch_ms"  : t_ste,
+            "speedup"     : t_ste / t_ker,
+        })
 
     return results
 
@@ -180,8 +203,8 @@ def main():
     print(f"{'═'*60}")
     print(f"  Roundtrip:  {'✅ PASS' if ok1 else '❌ FAIL'}")
     print(f"  Parity:     {'✅ PASS' if ok2 else '❌ FAIL'}")
-    mean_speedup = sum(r['speedup'] for r in results) / len(results)
-    print(f"  Speedup:    {mean_speedup:.2f}× average over all shapes")
+    mean_speedup = sum(r['speedup_vs_dequant'] for r in results) / len(results)
+    print(f"  Speedup:    {mean_speedup:.2f}× average vs dequant BF16 (honest baseline)")
 
     with open("benchmark_kernel_results.json", "w") as f:
         json.dump(results, f, indent=2)

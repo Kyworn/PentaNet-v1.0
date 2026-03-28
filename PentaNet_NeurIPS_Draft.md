@@ -38,6 +38,8 @@ We formalize the **PentaLinear** layer, implement native pentanary training usin
 
 **Quantization-Aware Training (QAT).** QAT methods simulate quantization during training but typically target 4-bit or 8-bit formats. Our approach operates at the extreme end (< 3 bits effective) with a fixed discrete set, making it closer to BitNet-style native training than to traditional QAT.
 
+**Multiplication-Free Networks.** DeepShift (Elhoushi et al., 2019) replaces multiplications with bit-shifts and sign flips in convolutional and fully-connected layers, demonstrating 25% latency reduction on ResNet18 with custom GPU kernels. APoT (Li et al., 2019) constrains quantization levels to sums of powers-of-two, similarly enabling addition-only inference. PentaNet weights $\{-2, -1, 0, +1, +2\}$ are structurally equivalent to DeepShift-PS weights with 1-bit shifts ($\pm 2 = \text{sign} \times 2^1$, $\pm 1 = \text{sign} \times 2^0$), extending this line of work to native training of large language models.
+
 ## 3. Methodology
 
 ### 3.1 The PentaLinear Layer
@@ -256,7 +258,9 @@ These results establish that the next level of extreme quantization beyond terna
 
 ## References
 
+- Elhoushi, M. et al. (2019). DeepShift: Towards Multiplication-Less Neural Networks. *arXiv:1905.13298*.
 - Frantar, E. et al. (2022). GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. *arXiv:2210.17323*.
+- Li, Y. et al. (2019). Additive Powers-of-Two Quantization: An Efficient Non-uniform Discretization for Neural Networks. *arXiv:1909.13144*.
 - Lin, J. et al. (2024). AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration. *MLSys 2024*.
 - Ma, S. et al. (2024). The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits. *arXiv:2402.17764*.
 - Merity, S. et al. (2017). Regularizing and Optimizing LSTM Language Models. *arXiv:1708.02182*.
