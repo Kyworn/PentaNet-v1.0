@@ -207,6 +207,10 @@ PentaNet uses 1.5× more bits than BitNet but delivers $\log_2(5)/\log_2(3) \app
 
 The batch-size-1 case (0.48×) reflects INT8 GEMM overhead at minimal parallelism; all multi-token shapes show consistent speedup. Numerical parity is verified to `max_diff < 1e-4` against the FP32 reference.
 
+**AVX2 zero-multiplier kernel.** We additionally implement a C AVX2 kernel (`penta_avx2.c`) using only `_mm256_add_ps`, `_mm256_sub_ps`, and `_mm256_blendv_ps` — no `_mm256_mul_ps` in the inner loop. The $\times 2$ for $\pm 2$ weights is realized as `_mm256_add_ps(x, x)`. Benchmarked on the same hardware:
+
+The AVX2 zero-multiplier kernel matches FP32 dequantized performance at batch size 1 (0.025 ms each) — the dominant scenario in autoregressive inference — while eliminating all floating-point multiplications from the inner loop. For large-batch prefill, cuBLAS INT8 GEMM remains superior; tiling optimization is left as future work.
+
 **FPGA/ASIC.** The 3-bit encoding additionally supports zero-multiplier realization on custom silicon: values $\pm 2$ reduce to a sign flip and a single adder, with no multiplier unit required (DeepShift, Elhoushi et al., 2019). This is left as a hardware deployment direction for future work.
 
 ### 5.3 Limitations
