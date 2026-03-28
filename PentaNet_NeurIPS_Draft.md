@@ -211,7 +211,15 @@ The batch-size-1 case (0.48×) reflects INT8 GEMM overhead at minimal parallelis
 
 **AVX2 zero-multiplier kernel.** We additionally implement a C AVX2 kernel (`penta_avx2.c`) using only `_mm256_add_ps`, `_mm256_sub_ps`, and `_mm256_blendv_ps` — no `_mm256_mul_ps` in the inner loop. The $\times 2$ for $\pm 2$ weights is realized as `_mm256_add_ps(x, x)`. Benchmarked on the same hardware:
 
-The AVX2 zero-multiplier kernel matches FP32 dequantized performance at batch size 1 (0.025 ms each) — the dominant scenario in autoregressive inference — while eliminating all floating-point multiplications from the inner loop. For large-batch prefill, cuBLAS INT8 GEMM remains superior; tiling optimization is left as future work.
+| Shape (B, K→N) | FP32 dequant | AVX2 kernel | vs FP32 |
+|:---:|:---:|:---:|:---:|
+| (1, 768→768) | 0.025 ms | 0.025 ms | **1.01×** |
+| (8, 768→3072) | 0.089 ms | 0.295 ms | 0.30× |
+| (32, 768→3072) | 0.244 ms | 0.881 ms | 0.28× |
+| (64, 768→3072) | 0.347 ms | 1.742 ms | 0.20× |
+| (64, 3072→768) | 0.339 ms | 1.743 ms | 0.19× |
+
+The AVX2 zero-multiplier kernel matches FP32 dequantized performance at batch size 1 (0.025 ms each) — the dominant scenario in autoregressive inference — while eliminating all floating-point multiplications from the inner loop. For large-batch prefill, the scalar AVX2 approach is outperformed by cuBLAS INT8 GEMM; tiling and vectorization optimization is left as future work.
 
 **FPGA/ASIC.** The 3-bit encoding additionally supports zero-multiplier realization on custom silicon: values $\pm 2$ reduce to a sign flip and a single adder, with no multiplier unit required (DeepShift, Elhoushi et al., 2019). This is left as a hardware deployment direction for future work.
 
