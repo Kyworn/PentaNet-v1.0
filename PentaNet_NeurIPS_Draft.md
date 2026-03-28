@@ -205,19 +205,9 @@ stored 3 → actual +1 : acc += x         (add)
 stored 4 → actual +2 : acc += x + x    (one FADD)
 ```
 
-The $\times 2$ is realized as `x + x` (a single `FADD`), not as `x * 2` (`FMUL`). The single unavoidable multiply is the final scale application (`acc * scale`), which is one `FMUL` per output element shared across the entire $K$ dimension. Full hardware realization of zero-multiplier inference — where the GPU's FMUL units are entirely bypassed — requires dedicated silicon (FPGA or ASIC); the Triton kernel realizes this guarantee at the code level, and the observed speedup reflects reduced arithmetic complexity rather than ISA-level multiplier elimination.
+The $\times 2$ is realized as `x + x` (a single `FADD`), not as `x * 2` (`FMUL`). The single unavoidable multiply is the final scale application (`acc * scale`), which is one `FMUL` per output element shared across the entire $K$ dimension. Full hardware realization of zero-multiplier inference — where the GPU's FMUL units are entirely bypassed — requires dedicated silicon (FPGA or ASIC); the Triton kernel realizes this guarantee at the code level.
 
-Benchmarked on a single NVIDIA RTX 5080 against the PyTorch STE baseline:
-
-| Shape (M, K→N) | PyTorch STE | Triton Kernel | Speedup |
-|:---:|:---:|:---:|:---:|
-| (1, 768→768) | 0.035 ms | 0.024 ms | 1.48× |
-| (8, 768→3072) | 0.062 ms | 0.033 ms | 1.89× |
-| (32, 768→3072) | 0.076 ms | 0.037 ms | **2.06×** |
-| (64, 768→3072) | 0.080 ms | 0.061 ms | 1.31× |
-| Average | — | — | **1.49×** |
-
-Numerical parity between the kernel and the PyTorch STE reference is verified to within `max_diff < 0.02` across all GPT-2 projection shapes (bfloat16 activations).
+Numerical parity between the kernel and the reference is verified to within `max_diff < 0.02` across all GPT-2 projection shapes (bfloat16 activations). Throughput optimization — replacing the current column-wise accumulation with a DeepShift-style tensor-core kernel (Elhoushi et al., 2019) — is left as future work (see Section 5.3).
 
 **Memory footprint** of the 3-bit packed format for a full 124M-parameter GPT-2:
 
@@ -232,14 +222,14 @@ PentaNet uses 1.5× more bits than BitNet (3 vs 2 bits per weight), but delivers
 ### 5.3 Limitations
 
 1. **Scale.** Our experiments use a 124M-parameter model. While the results are promising, validation at 1B+ parameters on larger corpora (e.g., FineWeb-Edu, RedPajama) is necessary to confirm that the perplexity advantage scales.
-2. **Kernel optimization.** The current Triton kernel uses a column-wise accumulation strategy that is sub-optimal for shapes with very large $K$ and small batch size (e.g., $K=3072 \rightarrow N=768$ at $M=64$: speedup 0.71×). A Split-K decomposition — partitioning the inner dimension across multiple thread blocks — would address this bottleneck for low-batch inference.
+2. **Kernel throughput.** The current Triton kernel implements zero-multiplier arithmetic at the source level but does not yet match cuBLAS throughput on GPU — modern BLAS libraries use tensor cores which make FADD and FMUL effectively equivalent in cost. A DeepShift-style kernel (Elhoushi et al., 2019) leveraging INT8 tensor cores, or a Split-K decomposition for large-$K$ shapes, would close this gap. The primary inference benefit on current GPU hardware is the 5.3× reduction in weight memory bandwidth.
 3. **Single dataset.** While WikiText-103 is a standard benchmark, downstream task evaluation (MMLU, HellaSwag, ARC) is needed to confirm that lower perplexity translates into improved task performance.
 4. **Comparison scope.** We compare against BitNet (ternary) only. A broader comparison including 2-bit PTQ methods (AQLM, QuIP#) and 4-bit QAT baselines would strengthen the positioning.
 
 ### 5.4 Future Work
 
 - **Scaling experiments** at 1B and 7B parameters to evaluate whether the ~6% PPL gap widens or narrows with model size.
-- **Kernel optimization (Split-K)** for the Triton kernel to recover throughput on large-$K$, small-batch shapes (the current implementation already achieves 1.49× average speedup; Split-K would complete the coverage).
+- **Kernel optimization** via a DeepShift-style INT8 tensor-core GEMM or Split-K decomposition to achieve competitive GPU throughput vs. cuBLAS.
 - **Septenary extension** ($\{-3, \ldots, +3\}$, $\lceil \log_2 7 \rceil = 3$ bits, 7/8 states used) to test whether further state expansion yields diminishing returns at identical storage cost.
 - **Downstream evaluation** on standard NLP benchmarks (MMLU, HellaSwag, ARC-Easy/Challenge).
 - **Energy profiling** on embedded and ASIC targets to quantify the watt-per-token advantage of zero-multiplier inference.
