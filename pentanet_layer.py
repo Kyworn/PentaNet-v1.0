@@ -2,6 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Optional: PentaKernel fast inference (requires CUDA + Triton)
+try:
+    from penta_kernel import quantize_and_pack, penta_linear as _penta_linear_fast
+    _KERNEL_AVAILABLE = True
+except ImportError:
+    _KERNEL_AVAILABLE = False
+
 
 # ============================================================
 # 1. IMPLÉMENTATION DES COUCHES (STE - Straight-Through Estimator)
@@ -40,6 +47,23 @@ class PentaLinear(nn.Module):
         # Mais pour cette preuve de concept, on se concentre sur les poids
         return F.linear(x, w_ste, self.bias)
 
+    def to_fast_inference(self) -> 'PentaLinearFast':
+        """
+        Convert this layer to a PentaLinearFast module for optimized
+        CUDA inference using the 3-bit Triton kernel.
+
+        Call this after training is complete, before inference:
+            model.eval()
+            for m in model.modules():
+                if isinstance(m, PentaLinear):
+                    # Replace in parent module manually, or use:
+                    pass
+            # Or use: convert_to_fast_inference(model)
+        """
+        assert _KERNEL_AVAILABLE, "penta_kernel not found — is Triton installed?"
+        assert self.weight.is_cuda, "Weights must be on CUDA"
+        return PentaLinearFast.from_pentalinear(self)
+
 
 class BitLinear(nn.Module):
     """
@@ -59,6 +83,75 @@ class BitLinear(nn.Module):
         w_quant = torch.clamp(torch.round(w_scaled), -1, 1)
         w_ste = (w_quant * scale - self.weight).detach() + self.weight
         return F.linear(x, w_ste, self.bias)
+
+
+# ============================================================
+# 1c. FAST INFERENCE LAYER (3-bit Triton Kernel)
+# ============================================================
+
+class PentaLinearFast(nn.Module):
+    """
+    Drop-in replacement for PentaLinear using the 3-bit Triton kernel.
+    Weights are stored in packed int32 (3 bits effective per weight).
+
+    Memory vs FP16:   ~5.33× smaller
+    Memory vs BitNet:  1.5× more bits → 1.47× more information (log2(5)/log2(3))
+
+    Usage:
+        model.eval()
+        model = convert_to_fast_inference(model.cuda())
+        y = model(x_bfloat16)
+    """
+
+    def __init__(self, packed_w: torch.Tensor, scale: float, K_orig: int,
+                 bias: torch.Tensor | None = None):
+        super().__init__()
+        assert _KERNEL_AVAILABLE, "penta_kernel (Triton) is required"
+        self.register_buffer('packed_w', packed_w)   # (N, K_packs) int32
+        self.scale  = scale
+        self.K_orig = K_orig
+        if bias is not None:
+            self.register_buffer('bias', bias)
+        else:
+            self.bias = None
+
+    @classmethod
+    def from_pentalinear(cls, layer: 'PentaLinear') -> 'PentaLinearFast':
+        """Quantize + 3-bit pack the master weights from a trained PentaLinear."""
+        packed, K_orig, scale = quantize_and_pack(layer.weight.detach())
+        bias = layer.bias.detach().clone() if layer.bias is not None else None
+        return cls(packed, scale, K_orig, bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dtype != torch.bfloat16:
+            x = x.to(torch.bfloat16)
+        return _penta_linear_fast(x, self.packed_w, self.scale, self.K_orig, self.bias)
+
+    def extra_repr(self) -> str:
+        N, K_packs = self.packed_w.shape
+        mb = N * self.K_orig * 3 / 8 / 1e6
+        return (f'in={self.K_orig}, out={N}, scale={self.scale:.4f}, '
+                f'packed_size={mb:.3f} MB (3-bit)')
+
+
+def convert_to_fast_inference(model: nn.Module) -> nn.Module:
+    """
+    Recursively convert all PentaLinear layers in a model to PentaLinearFast.
+    Call after training completes, before deployment.
+
+    Example:
+        model.eval()
+        model = convert_to_fast_inference(model.cuda())
+        y = model(x.to(torch.bfloat16))
+    """
+    assert _KERNEL_AVAILABLE, "penta_kernel (Triton) is required"
+    for name, module in list(model.named_children()):
+        if isinstance(module, PentaLinear):
+            setattr(model, name, PentaLinearFast.from_pentalinear(module))
+        else:
+            convert_to_fast_inference(module)
+    return model
+
 
 # ============================================================
 # 2. TOY TRAINING LOOP (Preuve d'apprentissage)

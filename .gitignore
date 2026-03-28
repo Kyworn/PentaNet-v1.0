@@ -13,6 +13,9 @@ models/*.pt
 *.log
 wandb/
 
+# Claude Code local settings
+.claude/
+
 # Generated
 dashboard.html
 __pycache__/

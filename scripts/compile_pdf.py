@@ -87,39 +87,21 @@ def delatex(text):
 md_text = delatex(md_text)
 
 # Convert markdown to HTML
+# Figures are embedded directly in the markdown via ![](path) — no manual injection needed.
 html_body = markdown.markdown(md_text, extensions=['tables', 'fenced_code', 'codehilite'])
 
-# Inject figure references (replace placeholders or insert after relevant sections)
-# We insert Figure 1 after "4.2 Convergence Dynamics" and Figure 2 after "4.3 Weight Distribution"
-fig1_path = os.path.abspath('paper/figures/figure1_ppl_convergence.png')
-fig2_path = os.path.abspath('paper/figures/figure2_weight_distribution.png')
-
-fig1_html = f'''
-<div class="figure">
-  <img src="file://{fig1_path}" alt="Figure 1: PPL Convergence" />
-  <p class="caption"><strong>Figure 1.</strong> Validation perplexity convergence on WikiText-103. 
-  Solid lines: PentaNet (pentanary). Dashed lines: BitNet (ternary). 
-  Three independent seeds per architecture. PentaNet consistently achieves lower PPL from iteration ~2,000 onward.</p>
-</div>
-'''
-
-fig2_html = f'''
-<div class="figure">
-  <img src="file://{fig2_path}" alt="Figure 2: Weight Distribution" />
-  <p class="caption"><strong>Figure 2.</strong> PentaNet quantized weight distribution over training (Seed 42).
-  All five buckets maintain stable occupancy throughout 10,000 iterations, with ±2 states at ~11%.
-  No collapse toward ternary is observed.</p>
-</div>
-'''
-
-# Insert figures after the relevant sections
-html_body = html_body.replace(
-    '<h3>4.3 Weight Distribution Stability (Non-Collapse Analysis)</h3>',
-    fig1_html + '<h3>4.3 Weight Distribution Stability (Non-Collapse Analysis)</h3>'
+# Wrap markdown images in figure divs for PDF styling
+html_body = re.sub(
+    r'<img alt="(Figure \d+:[^"]*)" src="([^"]+)" />',
+    r'<div class="figure"><img alt="\1" src="\2" /></div>',
+    html_body
 )
-html_body = html_body.replace(
-    '<h2>5. Discussion</h2>',
-    fig2_html + '<h2>5. Discussion</h2>'
+# Remove the italic caption lines that follow (rendered as <em> inside <p>)
+# They are kept for GitHub markdown — in PDF the alt text is sufficient
+html_body = re.sub(
+    r'<p><em>(Figure \d+:[^<]+)</em></p>',
+    r'<p class="caption">\1</p>',
+    html_body
 )
 
 # Full HTML document with academic styling
@@ -268,5 +250,6 @@ full_html = f'''<!DOCTYPE html>
 os.makedirs('paper', exist_ok=True)
 
 print("📝 Compiling PDF...")
-HTML(string=full_html).write_pdf(OUTPUT)
+base_url = os.path.abspath('.') + '/'
+HTML(string=full_html, base_url=base_url).write_pdf(OUTPUT)
 print(f"✅ PDF written to {OUTPUT}")

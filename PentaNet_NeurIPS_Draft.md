@@ -10,7 +10,7 @@
 
 ## Abstract
 
-Extreme quantization of Large Language Models (LLMs) has recently converged toward ternary weights $\{-1, 0, +1\}$ (e.g., BitNet b1.58), which eliminate floating-point multiplications during inference but fundamentally cap the representational entropy at $\log_2(3) \approx 1.58$ bits per weight. We propose **PentaNet**, an architecture that extends the quantized weight space to the pentanary set $\{-2, -1, 0, +1, +2\}$, reaching $\log_2(5) \approx 2.32$ bits per weight while preserving the zero-multiplier property: operations involving $\pm 2$ reduce to hardware-native bit-shifts (`<< 1`). Through a controlled experiment on WikiText-103 with a 124M-parameter GPT-2-style model trained natively in pentanary mode, we demonstrate three key findings: **(1)** PentaNet achieves a mean perplexity of **180.32 ± 2.09** versus **192.63 ± 3.52** for BitNet under identical conditions (a **6.4% relative improvement**, consistent across 3 seeds); **(2)** the Straight-Through Estimator (STE) remains stable throughout training, with no oscillation or divergence at the $\pm 1 \leftrightarrow \pm 2$ boundaries; **(3)** the learned weight distribution maintains symmetric utilization of all five states — crucially, the $\pm 2$ buckets stabilize at $\sim$11% each, disproving the hypothesis that pentanary networks would collapse into de facto ternary representations.
+Extreme quantization of Large Language Models (LLMs) has recently converged toward ternary weights $\{-1, 0, +1\}$ (e.g., BitNet b1.58), which eliminate floating-point multiplications during inference but fundamentally cap the representational entropy at $\log_2(3) \approx 1.58$ bits per weight. We propose **PentaNet**, an architecture that extends the quantized weight space to the pentanary set $\{-2, -1, 0, +1, +2\}$, reaching $\log_2(5) \approx 2.32$ bits per weight while remaining zero-multiplier at the source level; the primary inference benefit derives from 3-bit memory compression (5.3× vs FP16), with operations involving $\pm 2$ realized as addition-only doubles (`x + x`) requiring no floating-point multiply. Through a controlled experiment on WikiText-103 with a 124M-parameter GPT-2-style model trained natively in pentanary mode, we demonstrate three key findings: **(1)** PentaNet achieves a mean perplexity of **180.32 ± 2.09** versus **192.63 ± 3.52** for BitNet under identical conditions (a **6.4% relative improvement**, consistent across 3 seeds); **(2)** the Straight-Through Estimator (STE) remains stable throughout training, with no oscillation or divergence at the $\pm 1 \leftrightarrow \pm 2$ boundaries; **(3)** the learned weight distribution maintains symmetric utilization of all five states — crucially, the $\pm 2$ buckets stabilize at $\sim$11% each, disproving the hypothesis that pentanary networks would collapse into de facto ternary representations.
 
 ---
 
@@ -24,9 +24,9 @@ In this paper, we explore the natural next level of **native** extreme quantizat
 
 - Multiplication by $0$: result is $0$ (no operation).
 - Multiplication by $\pm 1$: identity or sign flip (addition/subtraction).
-- Multiplication by $\pm 2$: a single left bit-shift (`<< 1`) followed by add/subtract.
+- Multiplication by $\pm 2$: an addition-only double (`x + x`) followed by add/subtract — no floating-point multiply required.
 
-No generic multiplier unit is required. The effective information density rises to $\log_2(5) \approx 2.32$ bits per weight — a **47% increase** over ternary — at the cost of exactly one additional bit-shift instruction per $\pm 2$ weight.
+No generic multiplier unit is required. The effective information density rises to $\log_2(5) \approx 2.32$ bits per weight — a **47% increase** over ternary — at the cost of exactly one additional FADD instruction per $\pm 2$ weight.
 
 We formalize the **PentaLinear** layer, implement native pentanary training using a Straight-Through Estimator (STE), and evaluate it head-to-head against BitNet b1.58 on autoregressive language modeling over WikiText-103.
 
@@ -50,7 +50,7 @@ $$\gamma = \max\left(\frac{1}{n} \sum_{i,j} |W_{ij}|,\ \epsilon\right)$$
 
 $$\bar{W} = \text{Round}\left(\text{Clip}\left(\frac{W}{\gamma},\ -2,\ 2\right)\right)$$
 
-where $n = d_{out} \times d_{in}$ and $\epsilon = 10^{-8}$. The forward pass computes $Y = X \bar{W}^T \cdot \gamma$, restoring the original scale. By construction, every entry of $\bar{W}$ is an integer in $\{-2, -1, 0, +1, +2\}$, meaning $X \bar{W}^T$ requires only additions, subtractions, and single-position bit-shifts.
+where $n = d_{out} \times d_{in}$ and $\epsilon = 10^{-8}$. The forward pass computes $Y = X \bar{W}^T \cdot \gamma$, restoring the original scale. By construction, every entry of $\bar{W}$ is an integer in $\{-2, -1, 0, +1, +2\}$, meaning $X \bar{W}^T$ requires only additions, subtractions, and addition-only doubles (`x + x`) for $\pm 2$ weights.
 
 For the BitNet baseline, the same module is used with `Clip` bounds set to $[-1, +1]$, producing ternary weights $\{-1, 0, +1\}$.
 
@@ -116,6 +116,8 @@ We train on **WikiText-103** (Merity et al., 2017), a standard language modeling
 | **PentaNet** | **180.32 ± 2.09** | 2.09 | 5.1947 |
 | BitNet | 192.63 ± 3.52 | 3.52 | 5.2606 |
 
+All runs were trained for 10,000 iterations over 41M tokens (~0.4 epoch of WikiText-103), chosen to match an equivalent BitNet training budget exactly.
+
 PentaNet achieves a **6.4% mean relative reduction in perplexity** over BitNet, consistent across all three seeds. The improvement is statistically robust: PentaNet's *worst* seed (183.31) still outperforms BitNet's *best* seed (187.77) by a margin of 4.46 PPL points.
 
 Notably, PentaNet also exhibits lower inter-seed variance ($\sigma = 2.09$ vs. $\sigma = 3.52$), suggesting more stable convergence dynamics.
@@ -129,6 +131,10 @@ Both architectures exhibit smooth convergence curves with no training instabilit
 - **Iterations 5,000–10,000:** Convergence plateau. The gap between PentaNet and BitNet stabilizes and persists.
 
 The learning rate schedule (cosine decay from $3 \times 10^{-4}$ to $3 \times 10^{-5}$) produces no late-training instabilities for either architecture.
+
+![Figure 1: Validation perplexity convergence (log scale) for PentaNet and BitNet across three seeds on WikiText-103. PentaNet (solid lines) consistently separates from BitNet (dashed lines) from iteration ~2,000 onward, with lower inter-seed variance throughout.](paper/figures/figure1_ppl_convergence.png)
+
+*Figure 1: Validation perplexity convergence on WikiText-103 (log scale). All six runs (3 seeds × 2 architectures) trained for 10,000 iterations over 41M tokens. PentaNet (solid) consistently below BitNet (dashed) from iteration ~2,000 onward.*
 
 ### 4.3 Weight Distribution Stability (Non-Collapse Analysis)
 
@@ -153,6 +159,10 @@ Key observations:
 
 This result is of independent interest: it demonstrates that the STE gradient signal is strong enough to maintain meaningful utilization of the outer quantization levels throughout training, even under the influence of weight decay ($\lambda = 0.1$).
 
+![Figure 2: PentaNet weight bucket occupancy across training (Seed 42). All five buckets remain stable; the ±2 outer states hold ~11% occupancy throughout, confirming no collapse toward a ternary regime.](paper/figures/figure2_weight_distribution.png)
+
+*Figure 2: Weight bucket occupancy (%) across 10,000 training iterations (Seed 42). The five pentanary states maintain a stable Gaussian-like distribution. The $\pm 2$ outer buckets (orange/red) hold $\sim$11% occupancy from start to finish — no collapse toward ternary.*
+
 ## 5. Discussion
 
 ### 5.1 Information-Theoretic Interpretation
@@ -163,13 +173,15 @@ The maintained Gaussian-like distribution of weights across all five buckets ind
 
 ### 5.2 Hardware Implications
 
-PentaNet preserves the core computational advantage of BitNet: the elimination of general-purpose multipliers. The only additional operation required for $\pm 2$ weights is a single-position left bit-shift, which:
+PentaNet preserves multiplication-free arithmetic at the source level, enabling efficient deployment on CPU and edge hardware. On GPU, the primary benefit is memory bandwidth reduction via 3-bit packing (5.3× vs FP16).
+
+The only additional operation required for $\pm 2$ weights is an addition-only double (`x + x`), which:
 
 - Executes in 1 clock cycle on all modern CPUs, GPUs, and FPGAs.
 - Requires no dedicated multiplier circuitry.
 - Has identical latency and energy cost to an addition on most architectures.
 
-A PentaNet-optimized inference kernel would process weights as follows:
+The inference path for each weight is:
 
 ```
 if w == 0:  skip (no accumulation)
@@ -177,21 +189,58 @@ if w == ±1: accumulate ±x
 if w == ±2: accumulate ±(x << 1)
 ```
 
-This maps directly to a 3-way branch or a small lookup table, adding negligible overhead versus ternary inference. Custom ASIC or FPGA implementations could encode the 5-state weight in 3 bits (with one unused state) and decode it via a trivial multiplexer.
+**Triton Kernel Implementation.** We implemented and benchmarked a custom CUDA inference kernel using OpenAI Triton, validating the theoretical hardware claims above. The kernel uses **3-bit packing** — the minimal integer bit-width sufficient to represent 5 states ( $\lceil \log_2 5 \rceil = 3$ ) — encoding 10 pentanary weights per `int32` via:
+
+$$w_i = \left(\left(\text{PW} \gg 3i\right) \mathbin{\&} 7\right) - 2, \quad i \in \{0, \ldots, 9\}$$
+
+The accumulation loop implements the zero-multiplier principle at the Triton code level: **no floating-point multiply operator is used for weight application**. The five cases are handled entirely with additions, negations, and conditional selects (`tl.where`):
+
+```
+stored 0 → actual -2 : acc -= x + x     (one FADD + negate)
+stored 1 → actual -1 : acc -= x         (negate)
+stored 2 → actual  0 : acc unchanged    (no-op / masked out)
+stored 3 → actual +1 : acc += x         (add)
+stored 4 → actual +2 : acc += x + x    (one FADD)
+```
+
+The $\times 2$ is realized as `x + x` (a single `FADD`), not as `x * 2` (`FMUL`). The single unavoidable multiply is the final scale application (`acc * scale`), which is one `FMUL` per output element shared across the entire $K$ dimension. Full hardware realization of zero-multiplier inference — where the GPU's FMUL units are entirely bypassed — requires dedicated silicon (FPGA or ASIC); the Triton kernel realizes this guarantee at the code level, and the observed speedup reflects reduced arithmetic complexity rather than ISA-level multiplier elimination.
+
+Benchmarked on a single NVIDIA RTX 5080 against the PyTorch STE baseline:
+
+| Shape (M, K→N) | PyTorch STE | Triton Kernel | Speedup |
+|:---:|:---:|:---:|:---:|
+| (1, 768→768) | 0.035 ms | 0.024 ms | 1.48× |
+| (8, 768→3072) | 0.062 ms | 0.033 ms | 1.89× |
+| (32, 768→3072) | 0.076 ms | 0.037 ms | **2.06×** |
+| (64, 768→3072) | 0.080 ms | 0.061 ms | 1.31× |
+| Average | — | — | **1.49×** |
+
+Numerical parity between the kernel and the PyTorch STE reference is verified to within `max_diff < 0.02` across all GPT-2 projection shapes (bfloat16 activations).
+
+**Memory footprint** of the 3-bit packed format for a full 124M-parameter GPT-2:
+
+| Format | VRAM | vs FP16 |
+|:---:|:---:|:---:|
+| FP16 (standard) | 169.9 MB | 1× |
+| BitNet 2-bit | 21.2 MB | 8.0× smaller |
+| **PentaNet 3-bit** | **31.9 MB** | **5.3× smaller** |
+
+PentaNet uses 1.5× more bits than BitNet (3 vs 2 bits per weight), but delivers $\log_2(5)/\log_2(3) \approx 1.47\times$ more information per weight — an almost exact information-per-bit parity with ternary, at higher absolute capacity. Custom ASIC or FPGA implementations could exploit this 3-bit encoding natively via a trivial priority multiplexer, with no general-purpose multiplier required.
 
 ### 5.3 Limitations
 
 1. **Scale.** Our experiments use a 124M-parameter model. While the results are promising, validation at 1B+ parameters on larger corpora (e.g., FineWeb-Edu, RedPajama) is necessary to confirm that the perplexity advantage scales.
-2. **Simulated quantization.** Our current implementation performs quantization in PyTorch, not in custom CUDA/Triton kernels. Throughput measurements (~7.5 it/s) do not reflect the potential hardware efficiency of a native implementation.
+2. **Kernel optimization.** The current Triton kernel uses a column-wise accumulation strategy that is sub-optimal for shapes with very large $K$ and small batch size (e.g., $K=3072 \rightarrow N=768$ at $M=64$: speedup 0.71×). A Split-K decomposition — partitioning the inner dimension across multiple thread blocks — would address this bottleneck for low-batch inference.
 3. **Single dataset.** While WikiText-103 is a standard benchmark, downstream task evaluation (MMLU, HellaSwag, ARC) is needed to confirm that lower perplexity translates into improved task performance.
 4. **Comparison scope.** We compare against BitNet (ternary) only. A broader comparison including 2-bit PTQ methods (AQLM, QuIP#) and 4-bit QAT baselines would strengthen the positioning.
 
 ### 5.4 Future Work
 
 - **Scaling experiments** at 1B and 7B parameters to evaluate whether the ~6% PPL gap widens or narrows with model size.
-- **Triton kernel implementation** of PentaLinear for accurate throughput and energy benchmarking.
-- **Septenary extension** ($\{-3, \ldots, +3\}$) to test whether further state expansion yields diminishing returns.
-- **Downstream evaluation** on standard NLP benchmarks.
+- **Kernel optimization (Split-K)** for the Triton kernel to recover throughput on large-$K$, small-batch shapes (the current implementation already achieves 1.49× average speedup; Split-K would complete the coverage).
+- **Septenary extension** ($\{-3, \ldots, +3\}$, $\lceil \log_2 7 \rceil = 3$ bits, 7/8 states used) to test whether further state expansion yields diminishing returns at identical storage cost.
+- **Downstream evaluation** on standard NLP benchmarks (MMLU, HellaSwag, ARC-Easy/Challenge).
+- **Energy profiling** on embedded and ASIC targets to quantify the watt-per-token advantage of zero-multiplier inference.
 
 ## 6. Conclusion
 

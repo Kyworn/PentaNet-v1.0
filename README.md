@@ -31,7 +31,7 @@ model-index:
 
 **Author:** Zorko · Independent Researcher · [zorko.xyz](https://zorko.xyz)
 
-> PentaNet extends extreme quantization beyond BitNet's ternary `{-1, 0, +1}` to pentanary `{-2, -1, 0, +1, +2}`, achieving a **6.4% perplexity improvement** on WikiText-103 while preserving zero-multiplier inference (additions + bit-shifts only).
+> PentaNet extends extreme quantization beyond BitNet's ternary `{-1, 0, +1}` to pentanary `{-2, -1, 0, +1, +2}`, achieving a **6.4% perplexity improvement** on WikiText-103 while preserving zero-multiplier arithmetic at the source level (additions + addition-only doubles for ±2 weights).
 
 ## Key Results
 
