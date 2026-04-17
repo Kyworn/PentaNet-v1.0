@@ -42,6 +42,11 @@ model-index:
 | **PentaNet** {-2..+2} | **180.32** | ±2.09 | 42, 1337, 2026 |
 | BitNet {-1..+1} | 192.63 | ±3.52 | 42, 1337, 2026 |
 
+- **124M parameter** GPT-2-style transformer
+- **WikiText-103** (~100M tokens)
+- Trained on a single **RTX 5080** (16 GB)
+- No collapse: ±2 buckets maintain ~11% occupancy through all 10k iterations
+
 ### 345M params (24 layers × 1024 embed)
 
 | Model | PPL | Note |
@@ -51,11 +56,6 @@ model-index:
 | PentaNet sf=0.8 | 618 | 34% outer state usage (short_wide 12×1536) |
 
 See [INVESTIGATION.md](INVESTIGATION.md) for the full scaling analysis and scale_factor ablation.
-
-- **124M parameter** GPT-2-style transformer
-- **WikiText-103** (~100M tokens)
-- Trained on a single **RTX 5080** (16 GB)
-- No collapse: ±2 buckets maintain ~11% occupancy through all 10k iterations
 
 ### Text Generation Example (124M params, 20min training)
 *(Prompt: "The history of the internet began with")*
