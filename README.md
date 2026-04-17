@@ -114,6 +114,14 @@ python scripts/compile_pdf.py          # Compile full paper PDF
 Pre-trained checkpoints are available on HuggingFace:
 > 🤗 [kyworn/pentanet-124m](https://huggingface.co/kyworn/pentanet-124m) 
 
+## V2 Resurrection Paths
+
+The scaling investigation shows absmean + STE is the bottleneck. Three concrete directions for PentaNet v2:
+
+1. **Learnable Scale per Layer** — Replace the fixed absmean with a per-layer parameter optimized jointly with weights, letting each layer find its own optimal quantization grid entropy.
+2. **Distillation from FP32** — Stop training from scratch. Use a pre-trained FP32 model as teacher so pentanary weights inherit meaningful structure instead of discovering it from random init.
+3. **Soft Quantization** — Replace the hard Round+Clip STE with continuous relaxations (Gumbel-Softmax or temperature-scaled) so weights slide smoothly toward ±2 instead of being thrown there abruptly.
+
 ## Citation
 
 ```bibtex
