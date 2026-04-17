@@ -31,14 +31,26 @@ model-index:
 
 **Author:** Zorko · Independent Researcher · [zorko.xyz](https://zorko.xyz)
 
-> PentaNet extends extreme quantization beyond BitNet's ternary `{-1, 0, +1}` to pentanary `{-2, -1, 0, +1, +2}`, achieving a **6.4% perplexity improvement** on WikiText-103 while preserving zero-multiplier arithmetic at the source level (additions + addition-only doubles for ±2 weights).
+> PentaNet extends extreme quantization beyond BitNet's ternary `{-1, 0, +1}` to pentanary `{-2, -1, 0, +1, +2}`, achieving a **6.4% perplexity improvement** at 124M params on WikiText-103 while preserving zero-multiplier arithmetic. Scaling experiments show this advantage does not transfer to larger models (345M+) — the pentanary space requires more sophisticated scaling than absmean + STE.
 
 ## Key Results
+
+### 124M params (12 layers × 768 embed)
 
 | Model | Mean PPL | Std | Seeds |
 |:---|:---:|:---:|:---:|
 | **PentaNet** {-2..+2} | **180.32** | ±2.09 | 42, 1337, 2026 |
 | BitNet {-1..+1} | 192.63 | ±3.52 | 42, 1337, 2026 |
+
+### 345M params (24 layers × 1024 embed)
+
+| Model | PPL | Note |
+|:---|:---:|:---|
+| **BitNet** {-1..+1} | **273.0** | 67% outer state usage |
+| PentaNet {-2..+2} | 320.1 | 22% outer state usage |
+| PentaNet sf=0.8 | 618 | 34% outer state usage (short_wide 12×1536) |
+
+See [INVESTIGATION.md](INVESTIGATION.md) for the full scaling analysis and scale_factor ablation.
 
 - **124M parameter** GPT-2-style transformer
 - **WikiText-103** (~100M tokens)
@@ -72,7 +84,7 @@ model-index:
 │   ├── compile_pdf.py
 │   ├── export_figures.py
 │   ├── generate_dashboard.py
-│   └── plot_results.py
+│   └── pentanet_analysis.py
 └── models/                         # JSON logs + model checkpoints
     ├── pentanet_large_s{42,1337,2026}_results.json
     └── bitnet_large_s{42,1337,2026}_results.json
