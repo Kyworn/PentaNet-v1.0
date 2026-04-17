@@ -1,7 +1,6 @@
 # PentaNet: Native Pentanary Quantization for Large Language Models
 
 **Author:** Zorko
-*Independent Researcher*
 *[zorko.xyz](https://zorko.xyz)*
 
 **Status:** Technical Report (v1.0 — Benchmark Complete)

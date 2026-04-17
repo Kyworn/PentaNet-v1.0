@@ -29,7 +29,7 @@ model-index:
 
 # PentaNet — Native Pentanary Quantization for LLMs
 
-**Author:** Zorko · Independent Researcher · [zorko.xyz](https://zorko.xyz)
+**Author:** Zorko · [zorko.xyz](https://zorko.xyz)
 
 > PentaNet extends extreme quantization beyond BitNet's ternary `{-1, 0, +1}` to pentanary `{-2, -1, 0, +1, +2}`, achieving a **6.4% perplexity improvement** at 124M params on WikiText-103 while preserving zero-multiplier arithmetic. Scaling experiments show this advantage does not transfer to larger models (345M+) — the pentanary space requires more sophisticated scaling than absmean + STE.
 
